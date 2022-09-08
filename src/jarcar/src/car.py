@@ -8,7 +8,7 @@ matplotlib.use("Qt5Agg")
 from PyQt5 import QtCore, QtWidgets
 from PyQt5.QtWidgets import QMainWindow,QWidget, \
                             QApplication, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy
-from PyQt5.QtCore import QThread, Qt, QTimer
+from PyQt5.QtCore import QThread, Qt, QTimer, pyqtSignal, pyqtSlot, QObject, QCoreApplication
 
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -17,10 +17,16 @@ import rclpy
 from rclpy.node import Node
 
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import Float64, Int64
 
 GPS_TOPIC = '/jarcar/gps'
 IMU_TOPIC = '/jarcar/imu'
 REAL_ODOMETRY_TOPIC = '/jarcar/real_odometry'
+
+STEERING_INPUT_TOPIC = '/jarcar/steering'
+VELOCITY_INPUT_TOPIC = '/jarcar/velocity'
+
+KALMAN_FILTER_TOPIC = '/jarcar/kalman_filtered_odom'
 
 class CarCanvas(FigureCanvas):
     def __init__(self, parent = None, width = 5, height = 5, dpi = 100, xlim = (0, 100), ylim = (0, 100)):
@@ -71,19 +77,41 @@ class CarCanvas(FigureCanvas):
         self.figure.canvas.draw()
         #self.figure.canvas.flush_events()
 
-class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly CarCanvas. be careful about __mro__
+class CarNodeObject(Node, QObject):
+
+    kalman_filter_signal = pyqtSignal(PoseStamped)
+
+    def __init__(self):
+        rclpy.init(args = None)
+        super().__init__("node_thread")
+        self.gps_odometry_pub = self.create_publisher(PoseStamped, GPS_TOPIC, 10)
+        self.imu_odometry_pub = self.create_publisher(PoseStamped, IMU_TOPIC, 10)
+        self.real_odometry_pub = self.create_publisher(PoseStamped, REAL_ODOMETRY_TOPIC, 10)
+
+        self.steering_input_pub = self.create_publisher(Float64, STEERING_INPUT_TOPIC, 10)
+        self.velocity_input_pub = self.create_publisher(Int64, VELOCITY_INPUT_TOPIC, 10)
+
+        self.kalman_filter_sub = self.create_subscription(PoseStamped, KALMAN_FILTER_TOPIC, self.kalman_filter_callback, 10)
+
+        super(Node, self).__init__()
+
+    def start_node(self):
+        rclpy.spin(self)
+        self.destroy_node()
+        rclpy.shutdown()
+
+    def kalman_filter_callback(self, msg):
+        self.kalman_filter_signal.emit(msg)
+
+class Car(CarCanvas): # it's better to inherite firstly Node, secondly CarCanvas. be careful about __mro__
     """
         The car which starts at point (0, 0) when heading = 0, steering = 0, velocity = 0
     """
     IMU_VARIANCE = 1 #0.1
     GPS_VARIANCE = 2 # 0.1
     def __init__(self, *args, **kwargs):
-        super().__init__("car_publisher")
-        self.gps_odometry_pub = self.create_publisher(PoseStamped, GPS_TOPIC, 10)
-        self.imu_odometry_pub = self.create_publisher(PoseStamped, IMU_TOPIC, 10)
-        self.real_odometry_pub = self.create_publisher(PoseStamped, REAL_ODOMETRY_TOPIC, 10)
 
-        super(Node, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.velocity = 0.0
         self.steering = 0.0
@@ -98,13 +126,25 @@ class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly Car
         self.x_gps_measured = []
         self.y_gps_measured = []
 
-        self.imu_sensor()
-        self.gps()
+        self.x_kalman = [0]
+        self.y_kalman = [0]
 
-        self.imu_line, = self.axes.plot(self.x_imu_measured, self.y_imu_measured, 'g-', label = "imu")
-        self.gps_line, = self.axes.plot(self.x_gps_measured, self.y_gps_measured, 'b-', label = "gps")
+        # self.imu_sensor()
+        # self.gps()
+
+        self.imu_line,    = self.axes.plot(self.x_imu_measured, self.y_imu_measured, 'g-', label = "imu")
+        self.gps_line,    = self.axes.plot(self.x_gps_measured, self.y_gps_measured, 'b-', label = "gps")
+        self.kalman_line, = self.axes.plot(self.x_kalman, self.y_kalman, color = "purple", linestyle = "--", label = "kalman")
 
         self.figure.legend()
+
+    def init_ros(self):
+        self.ros_thread = QThread()
+        self.ros_object = CarNodeObject()
+        self.ros_object.kalman_filter_signal.connect(self.kalman_filter_callback)
+        self.ros_object.moveToThread(self.ros_thread)
+        self.ros_thread.started.connect(self.ros_object.start_node)
+        self.ros_thread.start()
 
     def set_steering(self, steering):
         if steering > np.pi / 4:
@@ -132,7 +172,7 @@ class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly Car
         imu_odometry_msg.pose.position.x = x_imu
         imu_odometry_msg.pose.position.y = y_imu
 
-        self.imu_odometry_pub.publish(imu_odometry_msg)
+        self.ros_object.imu_odometry_pub.publish(imu_odometry_msg)
         
     def gps(self):
         if len(self.x_gps_measured) > 300:
@@ -149,14 +189,14 @@ class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly Car
         gps_odometry_msg.pose.position.x = x_gps
         gps_odometry_msg.pose.position.y = y_gps
 
-        self.gps_odometry_pub.publish(gps_odometry_msg)
+        self.ros_object.gps_odometry_pub.publish(gps_odometry_msg)
 
     def real_odometry(self):
         real_odometry_msg = PoseStamped()
         real_odometry_msg.pose.position.x = self.x[-1]
         real_odometry_msg.pose.position.y = self.y[-1]
 
-        self.real_odometry_pub.publish(real_odometry_msg)
+        self.ros_object.real_odometry_pub.publish(real_odometry_msg)
 
     def update_data(self):
         self.imu_line.set_xdata(self.x_imu_measured)
@@ -164,28 +204,25 @@ class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly Car
 
         self.gps_line.set_xdata(self.x_gps_measured)
         self.gps_line.set_ydata(self.y_gps_measured)
+
+        self.kalman_line.set_xdata(self.x_kalman)
+        self.kalman_line.set_ydata(self.y_kalman)
         
         super().update_data()
         
     def update_simulation(self):
-        r = None
-        if self.steering == 0:
-            r = float("inf")
-        else:
-            r = self.L / np.tan(self.steering)
+        x_new, y_new = self.x[-1], self.y[-1]
+        x_new += self.velocity * np.cos(self.heading) * self.sim_dt
+        y_new += self.velocity * np.sin(self.heading) * self.sim_dt
+        self.heading += self.velocity / self.L * np.tan(self.steering) * self.sim_dt
 
-        delta_heading = self.velocity * self.sim_dt / r
-        x_new = self.x[-1]
-        y_new = self.y[-1]
+        velocity_msg = Int64()
+        velocity_msg.data = int(self.velocity)
+        self.ros_object.velocity_input_pub.publish(velocity_msg)
 
-        if r == float("inf"):
-            x_new += self.velocity * self.sim_dt * np.cos(self.heading)
-            y_new += self.velocity * self.sim_dt * np.sin(self.heading)
-        else:
-            x_new += 2 * r * np.sin(delta_heading / 2) * np.cos(self.heading - delta_heading / 2)
-            y_new += 2 * r * np.sin(delta_heading / 2) * np.sin(self.heading - delta_heading / 2)
-            self.heading += delta_heading
-
+        steering_msg = Float64()
+        steering_msg.data = self.steering
+        self.ros_object.steering_input_pub.publish(steering_msg)
 
         self.imu_sensor()
         self.gps()
@@ -193,10 +230,22 @@ class Car(Node, CarCanvas): # it's better to inherite firstly Node, secondly Car
 
         self.addPoint(x_new, y_new)
 
+    @pyqtSlot(PoseStamped)
+    def kalman_filter_callback(self, msg):
+        if len(self.x_kalman) > 300:
+            self.x_kalman = self.x_kalman[1::]
+
+        if len(self.y_kalman) > 300:
+            self.y_kalman = self.y_kalman[1::]
+
+        self.x_kalman.append(msg.pose.position.x)
+        self.y_kalman.append(msg.pose.position.y)
+        
 class CarMainWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.car = Car()
+        self.car.init_ros()
         self.steering_label = QLabel("Steering [degree] : 0")
         self.velocity_label = QLabel("Velocity [m/s] : 0")
 
@@ -240,13 +289,14 @@ class CarMainWindow(QWidget):
             self.car.set_steering(self.car.steering - np.deg2rad(5))
             self.steering_label.setText(f"Steering [degree] : {self.car.steering}")
 
-rclpy.init(args=None)
+# rclpy.init(args=None)
 app = QApplication(sys.argv)
 w = CarMainWindow()
+
 app.exec_()
 
-w.car.destroy_node()
-rclpy.shutdown()
+# w.car.destroy_node()
+# rclpy.shutdown()
 #app.destroy_node()
 #rclpy.shutdown()
 
