@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(jarcar)
+project(jarcar_msgs)
 
 # Default to C99
 if(NOT CMAKE_C_STANDARD)
@@ -17,12 +17,16 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(jarcar_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
-find_package(std_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
+
+find_package(rosidl_default_generators REQUIRED)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/CarControl.msg"
+  DEPENDENCIES # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

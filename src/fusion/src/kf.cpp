@@ -1,10 +1,13 @@
-#include "kf.hpp"
+#include "fusion/kf.hpp"
 #include <atrix/matrix.h>
 
 #include <math.h>
+#include <chrono>
 
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #pragma GCC diagnostic ignored "-Wunused-variable"
+
+using namespace std::chrono_literals;
 
 std::string GPS_TOPIC = "/jarcar/gps";
 std::string IMU_TOPIC = "/jarcar/imu";
@@ -36,6 +39,8 @@ KF_Node::KF_Node(
     steering_sub      = create_subscription<std_msgs::msg::Float64>(STEERING_TOPIC, 10, std::bind(&KF_Node::steering_callback, this, std::placeholders::_1));
     velocity_sub      = create_subscription<std_msgs::msg::Int64>(VELOCITY_TOPIC, 10, std::bind(&KF_Node::velocity_callback, this, std::placeholders::_1));
 
+    kalman_timer      = create_wall_timer(100ms, std::bind(&KF_Node::kalman_timer_callback, this));
+
 }
 
 void KF_Node::predict() {
@@ -50,6 +55,10 @@ void KF_Node::predict() {
 
     x = Matrix::dot(F, x) + Matrix::dot(B, u);
     P = Matrix::dot(F, Matrix::dot(P, Matrix::transpoze(F))) + Q;
+
+    // auto msg = geometry_msgs::msg::PoseStamped();
+    // msg.pose.position.x = x(0, 0);
+    // msg.pose.position.y = x(1, 0);
 }
 
 void KF_Node::update(Matrix::Vector<double> z) {
@@ -59,11 +68,11 @@ void KF_Node::update(Matrix::Vector<double> z) {
     x += Matrix::dot( K, z - Matrix::dot( H, x ) );
     P -= Matrix::dot( K, Matrix::dot( H, P ) );
 
-    auto msg = geometry_msgs::msg::PoseStamped();
-    msg.pose.position.x = x(0, 0);
-    msg.pose.position.y = x(1, 0);
+    // auto msg = geometry_msgs::msg::PoseStamped();
+    // msg.pose.position.x = x(0, 0);
+    // msg.pose.position.y = x(1, 0);
 
-    kalman_pub->publish(msg);
+    // kalman_pub->publish(msg);
 }
 
 void KF_Node::gps_callback(geometry_msgs::msg::PoseStamped::SharedPtr msg) {
@@ -75,7 +84,7 @@ void KF_Node::gps_callback(geometry_msgs::msg::PoseStamped::SharedPtr msg) {
     z(0, 0) = x_gps;
     z(1, 0) = y_gps;
 
-    this->predict();
+    // this->predict();
     this->update(z);
     std::cout << "[GPS CALLBACK]" << x_gps << " | " << y_gps << std::endl;
 }
@@ -96,11 +105,22 @@ void KF_Node::real_odometry_callback(geometry_msgs::msg::PoseStamped::SharedPtr 
 void KF_Node::steering_callback(std_msgs::msg::Float64::SharedPtr msg) {
     double steering = msg->data;
     u(0, 0) = steering;
+    // this->predict();
 }
 
 void KF_Node::velocity_callback(std_msgs::msg::Int64::SharedPtr msg) {
     double velocity = msg->data;
     u(1, 0) = velocity;
+    // this->predict();
+}
+
+void KF_Node::kalman_timer_callback() {
+    this->predict();
+    auto msg = geometry_msgs::msg::PoseStamped();
+    msg.pose.position.x = x(0, 0);
+    msg.pose.position.y = x(1, 0);
+
+    kalman_pub->publish(msg);
 }
 
 
@@ -110,7 +130,7 @@ int main(int argc, char** argv) {
     Matrix::Matrix<double> B = Matrix::zeros<double>(3, 2);
     Matrix::Matrix<double> Q = Matrix::identity<double>(3) * 0.1;
     Matrix::Matrix<double> H = Matrix::identity<double>(3);
-    Matrix::Matrix<double> R = Matrix::identity<double>(3) * 0.1;
+    Matrix::Matrix<double> R = Matrix::identity<double>(3) * 2;
     // Matrix::Matrix<double> u(2);
     // Matrix::Matrix<double> x(2); // state
     // Matrix::Matrix<double> z(1);

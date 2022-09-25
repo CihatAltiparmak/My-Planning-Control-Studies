@@ -45,6 +45,7 @@ private:
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr          steering_sub;
     rclcpp::Subscription<std_msgs::msg::Int64>::SharedPtr            velocity_sub;
     
+    rclcpp::TimerBase::SharedPtr kalman_timer;
 
     void gps_callback(geometry_msgs::msg::PoseStamped::SharedPtr);
     void imu_callback(geometry_msgs::msg::PoseStamped::SharedPtr) const;
@@ -52,4 +53,6 @@ private:
     
     void steering_callback(std_msgs::msg::Float64::SharedPtr);
     void velocity_callback(std_msgs::msg::Int64::SharedPtr); 
+
+    void kalman_timer_callback();
 };
