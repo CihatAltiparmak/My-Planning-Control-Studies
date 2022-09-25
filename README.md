@@ -3,8 +3,6 @@
 
 ## *Installation*
 
-* Install requirements
-
 Firstly, install ros foxy from [here](https://docs.ros.org/en/foxy/Installation/Ubuntu-Install-Debians.html)
 
 Install the matrix library, which i have developed, from [here](https://github.com/CihatAltiparmak/Matrix)
@@ -58,6 +56,7 @@ https://automaticaddison.com/linear-quadratic-regulator-lqr-with-python-code-exa
 
 ## **Citation**
 
+```
 @INPROCEEDINGS{7553742,
 
   author={Lin, Fengda and Lin, Zijian and Qiu, Xiaohong},
@@ -83,6 +82,7 @@ https://automaticaddison.com/linear-quadratic-regulator-lqr-with-python-code-exa
   ISSN={1934-1768},
 
   month={July},}
+  ```
 
 
 
