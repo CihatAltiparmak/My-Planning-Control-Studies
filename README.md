@@ -56,31 +56,19 @@ https://automaticaddison.com/linear-quadratic-regulator-lqr-with-python-code-exa
 
 ## **Citation**
 
-```
+```bibtex
 @INPROCEEDINGS{7553742,
-
   author={Lin, Fengda and Lin, Zijian and Qiu, Xiaohong},
-
   booktitle={2016 35th Chinese Control Conference (CCC)}, 
-
   title={LQR controller for car-like robot}, 
-
   year={2016},
-
   volume={},
-
   number={},
-
   pages={2515-2518},
-
   abstract={This work studies the trajectory tracking for a car-like robot. Based on the kinematic equations of the mobile robot, an tracking error model is obtained. And then, this nonlinear model is linearized around origin. Based on local linearized model, an optimal controller is designed for the trajectory tracking problem by using optimal linear quadratic (LQ) design approach. The simulation shows the effectiveness of optimal LQR (linear quadratic regulator) controller for the cases where the robot tracks both straight and curve trajectories.},
-
   keywords={},
-
   doi={10.1109/ChiCC.2016.7553742},
-
   ISSN={1934-1768},
-
   month={July},}
   ```
 
